@@ -12,25 +12,26 @@
 (defn path [& strs]
   (str/join "/" strs))
 
-(def release-endpoint (path endpoint "repos" "borkdude" "test-repo" "releases"))
+(defn release-endpoint [org repo]
+  (path endpoint "repos" org repo "releases"))
 
 (defn with-gh-headers [m]
   (update m :headers assoc
           "Authorization" (str "token " token)
           "Accept" "application/vnd.github.v3+json"))
 
-(defn list-releases []
-  (-> (curl/get release-endpoint
+(defn list-releases [org repo]
+  (-> (curl/get (release-endpoint org repo)
                 (with-gh-headers {}))
       :body
       (cheshire/parse-string true)))
 
-(defn get-draft-release [tag]
+(defn get-draft-release [org repo tag]
   (some #(when (= tag (:tag_name %)) %)
-        (list-releases)))
+        (list-releases org repo)))
 
-(defn create-draft-release [{:keys [:tag :commit]}]
-  (-> (curl/post release-endpoint
+(defn create-draft-release [{:keys [:tag :commit :org :repo]}]
+  (-> (curl/post (release-endpoint org repo)
                  (with-gh-headers
                    {:body (cheshire/generate-string {:tag_name tag
                                                      :target_commitish commit
@@ -39,8 +40,8 @@
       :body
       (cheshire/parse-string true)))
 
-(defn -draft-release-for [{:keys [:tag] :as opts}]
-  (or (get-draft-release tag)
+(defn -draft-release-for [{:keys [:org :repo :tag] :as opts}]
+  (or (get-draft-release org repo tag)
       (create-draft-release opts)))
 
 (def draft-release-for (memoize -draft-release-for))
@@ -71,7 +72,9 @@
         (cheshire/parse-string true))))
 
 (comment
- (overwrite-asset {:tag "v0.0.1"
-                   :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
-                   :file "artifacts/foo.zip"
-                   :content-type "application/zip"}))
+  (overwrite-asset {:org "borkdude"
+                    :repo "test-repo"
+                    :tag "v0.0.1"
+                    :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
+                    :file "artifacts/foo.zip"
+                    :content-type "application/zip"}))

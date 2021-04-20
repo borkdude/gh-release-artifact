@@ -51,7 +51,7 @@
         :body
         (cheshire/parse-string true))))
 
-(defn overwrite-asset [{:keys [:file] :as opts}]
+(defn overwrite-asset [{:keys [:file :content-type] :as opts}]
   (let [release (draft-release-for opts)
         upload-url (:upload_url release)
         upload-url (str/replace upload-url "{?name,label}" "")
@@ -65,7 +65,7 @@
                     :query-params {"name" (fs/file-name file)
                                    "label" (fs/file-name file)}
                     :headers {"Authorization" (str "token " token)
-                              "Content-Type" "application/zip"}
+                              "Content-Type" content-type}
                     :body (fs/file file)})
         :body
         (cheshire/parse-string true))))
@@ -73,4 +73,5 @@
 (comment
  (overwrite-asset {:tag "v0.0.1"
                    :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
-                   :file "artifacts/foo.zip"}))
+                   :file "artifacts/foo.zip"
+                   :content-type "application/zip"}))

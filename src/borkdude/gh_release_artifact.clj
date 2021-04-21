@@ -29,7 +29,8 @@
 
 (defn get-draft-release [org repo tag]
   (some #(when (= tag (:tag_name %)) %)
-        (list-releases org repo)))
+        ;; always choose oldest release to prevent race condition
+        (reverse (list-releases org repo))))
 
 (defn current-commit []
   (-> (sh "git" "rev-parse" "HEAD")
@@ -49,9 +50,19 @@
       :body
       (cheshire/parse-string true)))
 
+(defn delete-release [{:keys [:org :repo :id]}]
+  (curl/delete (path (release-endpoint org repo) id)))
+
 (defn -draft-release-for [{:keys [:org :repo :tag] :as opts}]
   (or (get-draft-release org repo tag)
-      (create-draft-release opts)))
+      (let [resp (create-draft-release opts)
+            created-id (:id resp)
+            release (get-draft-release org repo tag)
+            release-id (:id release)]
+        (when-not (= created-id release-id)
+          ;; in this scenario some other process created a new release just before username
+          (delete-release (assoc opts :id created-id)))
+        release)))
 
 (def draft-release-for (memoize -draft-release-for))
 

@@ -36,22 +36,25 @@
       :out
       str/trim))
 
-(defn create-draft-release [{:keys [:tag :commit :org :repo]}]
-  (-> (curl/post (release-endpoint org repo)
-                 (with-gh-headers
-                   {:body
-                    (cheshire/generate-string {:tag_name tag
-                                               :target_commitish
-                                               (or commit
-                                                   (current-commit))
-                                               :name tag
-                                               :draft true})}))
-      :body
-      (cheshire/parse-string true)))
+(defn ensure-draft-release [{:keys [:tag :commit :org :repo]}]
+  (let [resp (curl/post (release-endpoint org repo)
+                        (with-gh-headers
+                          {:throw false ;; ignore error
+                           :body
+                           (cheshire/generate-string {:tag_name tag
+                                                      :target_commitish
+                                                      (or commit
+                                                          (current-commit))
+                                                      :name tag
+                                                      :draft true})}))]
+    (prn (:status resp))
+    (-> resp
+        :body
+        (cheshire/parse-string true))))
 
 (defn -draft-release-for [{:keys [:org :repo :tag] :as opts}]
-  (or (get-draft-release org repo tag)
-      (create-draft-release opts)))
+  (or (ensure-draft-release opts)
+      (get-draft-release org repo tag)))
 
 (def draft-release-for (memoize -draft-release-for))
 

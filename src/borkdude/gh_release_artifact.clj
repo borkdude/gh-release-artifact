@@ -3,6 +3,7 @@
    [babashka.curl :as curl]
    [babashka.fs :as fs]
    [cheshire.core :as cheshire]
+   [clojure.java.shell :refer [sh]]
    [clojure.string :as str]))
 
 (def token (System/getenv "GITHUB_TOKEN"))
@@ -30,13 +31,21 @@
   (some #(when (= tag (:tag_name %)) %)
         (list-releases org repo)))
 
+(defn current-commit []
+  (-> (sh "git" "rev-parse" "HEAD")
+      :out
+      str/trim))
+
 (defn create-draft-release [{:keys [:tag :commit :org :repo]}]
   (-> (curl/post (release-endpoint org repo)
                  (with-gh-headers
-                   {:body (cheshire/generate-string {:tag_name tag
-                                                     :target_commitish commit
-                                                     :name tag
-                                                     :draft true})}))
+                   {:body
+                    (cheshire/generate-string {:tag_name tag
+                                               :target_commitish
+                                               (or commit
+                                                   (current-commit))
+                                               :name tag
+                                               :draft true})}))
       :body
       (cheshire/parse-string true)))
 

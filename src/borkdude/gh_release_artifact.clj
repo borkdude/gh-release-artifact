@@ -37,7 +37,8 @@
       :out
       str/trim))
 
-(defn create-draft-release [{:keys [:tag :commit :org :repo]}]
+(defn create-release [{:keys [:tag :commit :org :repo :draft]
+                       :or {draft true}}]
   (-> (curl/post (release-endpoint org repo)
                  (with-gh-headers
                    {:body
@@ -46,16 +47,16 @@
                                                (or commit
                                                    (current-commit))
                                                :name tag
-                                               :draft true})}))
+                                               :draft draft})}))
       :body
       (cheshire/parse-string true)))
 
 (defn delete-release [{:keys [:org :repo :id]}]
   (curl/delete (path (release-endpoint org repo) id)))
 
-(defn -draft-release-for [{:keys [:org :repo :tag] :as opts}]
+(defn -release-for [{:keys [:org :repo :tag] :as opts}]
   (or (get-draft-release org repo tag)
-      (let [resp (create-draft-release opts)
+      (let [resp (create-release opts)
             created-id (:id resp)
             release (get-draft-release org repo tag)
             release-id (:id release)]
@@ -64,10 +65,10 @@
           (delete-release (assoc opts :id created-id)))
         release)))
 
-(def draft-release-for (memoize -draft-release-for))
+(def release-for (memoize -release-for))
 
 (defn list-assets [opts]
-  (let [release (draft-release-for opts)]
+  (let [release (release-for opts)]
     (-> (curl/get (:assets_url release) (with-gh-headers {}))
         :body
         (cheshire/parse-string true))))
@@ -169,7 +170,7 @@
    "zip"      "application/zip"})
 
 (defn overwrite-asset [{:keys [:file :content-type] :as opts}]
-  (let [release (draft-release-for opts)
+  (let [release (release-for opts)
         upload-url (:upload_url release)
         upload-url (str/replace upload-url "{?name,label}" "")
         assets (list-assets opts)

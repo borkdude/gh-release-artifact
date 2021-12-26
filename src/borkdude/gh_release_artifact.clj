@@ -37,17 +37,19 @@
       :out
       str/trim))
 
-(defn create-release [{:keys [:tag :commit :org :repo :draft]
-                       :or {draft true}}]
+(defn create-release [{:keys [:tag :commit :org :repo :draft
+                              :target-commitish]
+                       :or {draft true
+                            target-commitish (or commit
+                                                 (current-commit))}}]
   (-> (curl/post (release-endpoint org repo)
                  (with-gh-headers
                    {:body
-                    (cheshire/generate-string {:tag_name tag
-                                               :target_commitish
-                                               (or commit
-                                                   (current-commit))
-                                               :name tag
-                                               :draft draft})}))
+                    (cheshire/generate-string (cond-> {:tag_name tag
+                                                       :name tag
+                                                       :draft draft}
+                                                target-commitish
+                                                (assoc :target_commitish target-commitish)))}))
       :body
       (cheshire/parse-string true)))
 

@@ -38,7 +38,7 @@
       str/trim))
 
 (defn create-release [{:keys [:tag :commit :org :repo :draft
-                              :target-commitish]
+                              :target-commitish :prerelease]
                        :or {draft true
                             target-commitish (or commit
                                                  (current-commit))}}]
@@ -49,7 +49,9 @@
                                                        :name tag
                                                        :draft draft}
                                                 target-commitish
-                                                (assoc :target_commitish target-commitish)))}))
+                                                (assoc :target_commitish target-commitish)
+                                                prerelease
+                                                (assoc :prerelease prerelease)))}))
       :body
       (cheshire/parse-string true)))
 

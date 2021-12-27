@@ -162,6 +162,7 @@
    "ts"       "video/mp2t"
    "ttf"      "font/ttf"
    "txt"      "text/plain"
+   "vsix"     "application/vsix"
    "webm"     "video/webm"
    "wmv"      "video/x-ms-wmv"
    "woff"     "font/woff"

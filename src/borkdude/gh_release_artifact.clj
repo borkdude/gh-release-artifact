@@ -56,13 +56,19 @@
       (cheshire/parse-string true)))
 
 (defn delete-release [{:keys [:org :repo :id]}]
-  (curl/delete (path (release-endpoint org repo) id)))
+  (curl/delete (path (release-endpoint org repo) id) {:throw false}))
 
 (defn -release-for [{:keys [:org :repo :tag] :as opts}]
   (or (get-draft-release org repo tag)
       (let [resp (create-release opts)
             created-id (:id resp)
-            release (get-draft-release org repo tag)
+            release (loop [attempt 0]
+                      (when (< attempt 10)
+                        (Thread/sleep (* attempt 50))
+                        ;; eventual consistency...
+                        (if-let [dr (get-draft-release org repo tag)]
+                          dr
+                          (recur (inc attempt)))))
             release-id (:id release)]
         (when-not (= created-id release-id)
           ;; in this scenario some other process created a new release just before username
@@ -162,6 +168,7 @@
    "ts"       "video/mp2t"
    "ttf"      "font/ttf"
    "txt"      "text/plain"
+   "md"       "text/plain"
    "vsix"     "application/vsix"
    "webm"     "video/webm"
    "wmv"      "video/x-ms-wmv"
@@ -182,7 +189,7 @@
         file-name (fs/file-name file)
         asset (some #(when (= file-name (:name %)) %) assets)]
     (when asset
-      (curl/delete (:url asset) (with-gh-headers {})))
+      (curl/delete (:url asset) (with-gh-headers {:throw false})))
     (-> (curl/post upload-url
                    {:throw false
                     :query-params {"name" (fs/file-name file)
@@ -198,7 +205,7 @@
 (comment
   (overwrite-asset {:org "borkdude"
                     :repo "test-repo"
-                    :tag "v0.0.1"
+                    :tag "v0.0.15"
                     :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
-                    :file "artifacts/foo.zip"
-                    :content-type "application/zip"}))
+                    :file "README.md"})
+  )

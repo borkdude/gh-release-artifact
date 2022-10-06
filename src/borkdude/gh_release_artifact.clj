@@ -3,87 +3,10 @@
    [babashka.curl :as curl]
    [babashka.fs :as fs]
    [cheshire.core :as cheshire]
+   [clj-commons.digest :as digest]
    [clojure.java.shell :refer [sh]]
    [clojure.string :as str]
-   [clj-commons.digest :as digest]
-   [clojure.java.io :as io]))
-
-(def token (System/getenv "GITHUB_TOKEN"))
-
-(def endpoint "https://api.github.com")
-
-(defn path [& strs]
-  (str/join "/" strs))
-
-(defn release-endpoint [org repo]
-  (path endpoint "repos" org repo "releases"))
-
-(defn with-gh-headers [m]
-  (update m :headers assoc
-          "Authorization" (str "token " token)
-          "Accept" "application/vnd.github.v3+json"))
-
-(defn list-releases [org repo]
-  (-> (curl/get (release-endpoint org repo)
-                (with-gh-headers {}))
-      :body
-      (cheshire/parse-string true)))
-
-(defn get-draft-release [org repo tag]
-  (some #(when (= tag (:tag_name %)) %)
-        ;; always choose oldest release to prevent race condition
-        (reverse (list-releases org repo))))
-
-(defn current-commit []
-  (-> (sh "git" "rev-parse" "HEAD")
-      :out
-      str/trim))
-
-(defn create-release [{:keys [:tag :commit :org :repo :draft
-                              :target-commitish :prerelease]
-                       :or {draft true
-                            target-commitish (or commit
-                                                 (current-commit))}}]
-  (-> (curl/post (release-endpoint org repo)
-                 (with-gh-headers
-                   {:body
-                    (cheshire/generate-string (cond-> {:tag_name tag
-                                                       :name tag
-                                                       :draft draft}
-                                                target-commitish
-                                                (assoc :target_commitish target-commitish)
-                                                prerelease
-                                                (assoc :prerelease prerelease)))}))
-      :body
-      (cheshire/parse-string true)))
-
-(defn delete-release [{:keys [:org :repo :id]}]
-  (curl/delete (path (release-endpoint org repo) id) {:throw false}))
-
-(defn -release-for [{:keys [:org :repo :tag] :as opts}]
-  (or (get-draft-release org repo tag)
-      (let [resp (create-release opts)
-            created-id (:id resp)
-            release (loop [attempt 0]
-                      (when (< attempt 10)
-                        (Thread/sleep (* attempt 50))
-                        ;; eventual consistency...
-                        (if-let [dr (get-draft-release org repo tag)]
-                          dr
-                          (recur (inc attempt)))))
-            release-id (:id release)]
-        (when-not (= created-id release-id)
-          ;; in this scenario some other process created a new release just before username
-          (delete-release (assoc opts :id created-id)))
-        release)))
-
-(def release-for (memoize -release-for))
-
-(defn list-assets [opts]
-  (let [release (release-for opts)]
-    (-> (curl/get (:assets_url release) (with-gh-headers {}))
-        :body
-        (cheshire/parse-string true))))
+   [borkdude.gh-release-artifact.internal :as ghr]))
 
 ;; A simple mime type utility from https://github.com/ring-clojure/ring/blob/master/ring-core/src/ring/util/mime_type.clj
 (def ^{:doc "A map of file extensions to mime-types."}
@@ -183,59 +106,43 @@
    "xwd"      "image/x-xwindowdump"
    "zip"      "application/zip"})
 
-(defn overwrite-asset [{:keys [:file :content-type] :as opts}]
-  (let [release (release-for opts)
-        upload-url (:upload_url release)
-        upload-url (str/replace upload-url "{?name,label}" "")
-        assets (list-assets opts)
-        file-name (fs/file-name file)
-        asset (some #(when (= file-name (:name %)) %) assets)
-        overwrite (get opts :overwrite true)
-        sha256 (get opts :sha256)]
-    (when asset
-      (when overwrite (curl/delete (:url asset) (with-gh-headers {:throw false}))))
-    (when (or (not asset)
-              ;; in case of asset, overwrite must be true, which it is by default
-              overwrite)
-      (let [response (curl/post upload-url
-                                {:throw false
-                                 :query-params {"name" (fs/file-name file)
-                                                "label" (fs/file-name file)}
-                                 :headers {"Authorization" (str "token " token)
-                                           "Content-Type"
-                                           (or content-type
-                                               (get default-mime-types (fs/extension file)))}
-                                 :body (fs/file file)})
-            body (-> response :body
-                     (cheshire/parse-string true))]
-        (prn (:status response))
-        (when (and sha256 (= 201 (:status response)))
-          (let [sha256-fname (str (fs/file-name file) ".sha256")
-                tmp-dir (fs/create-temp-dir)
-                hash (digest/sha-256 (fs/file file))
-                sha256-file (fs/file tmp-dir sha256-fname)
-                existing-sha-remote (some #(when (= sha256-fname (:name %)) %) assets)]
-            (when existing-sha-remote
-              (curl/delete (:url existing-sha-remote) (with-gh-headers {:throw false})))
-            (spit sha256-file hash)
-            (curl/post upload-url
-                       {:throw false
-                        :query-params {"name" sha256-fname
-                                       "label" sha256-fname}
-                        :headers {"Authorization" (str "token " token)
-                                  "Content-Type" "text/plain"}
-                        :body (fs/file sha256-file)})))
-        body))))
+(defn ^:no-doc overwrite-asset [opts]
+  (ghr/overwrite-asset opts))
+
+(defn release-artifact
+  "Uploads artifact to github release. Creates (draft) release if there
+  is no existing release yet. Uses token from `GITHUB_TOKEN`
+  environment variable for auth.
+
+  Required options:
+
+  * `:org` - Github organization.
+  * `:repo` - Github repository.
+  * `:tag` - Tag of release.
+  * `:file` - The file to be uploaded.
+
+  Optional options:
+
+  * `:commit` - Commit to be associated with release. Defaults to current commit.
+  * `:sha256` - Upload a `file.sha256` hash file along with `:file`.
+  * `:overwrite` - Overwrite exiting upload. Defaults to `false`.
+  * `:draft` - Created draft release. Defaults to `true`.
+  * `:content-type` - The file's content type. Default to lookup by extension in `default-mime-types`."
+  [{:keys [overwrite]
+    :or {overwrite false}
+    :as opts}]
+  (overwrite-asset (assoc opts :overwrite overwrite)))
 
 (comment
-  (overwrite-asset {:org "borkdude"
-                    :repo "test-repo"
-                    :tag "v0.0.15"
-                    :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
-                    :file "README.md"
-                    :sha256 true})
+  (release-artifact {:org "borkdude"
+                     :repo "test-repo"
+                     :tag "v0.0.15"
+                     :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
+                     :file "README.md"
+                     :sha256 true
+                     :overwrite true})
 
-  (overwrite-asset {:org "borkdude"
+  (release-artifact {:org "borkdude"
                     :repo "test-repo"
                     :tag "v0.0.15"
                     :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"

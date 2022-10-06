@@ -1,4 +1,5 @@
 (ns borkdude.gh-release-artifact.internal
+  {:no-doc true}
   (:require
    [babashka.curl :as curl]
    [babashka.fs :as fs]

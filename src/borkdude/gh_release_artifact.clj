@@ -1,11 +1,5 @@
 (ns borkdude.gh-release-artifact
   (:require
-   [babashka.curl :as curl]
-   [babashka.fs :as fs]
-   [cheshire.core :as cheshire]
-   [clj-commons.digest :as digest]
-   [clojure.java.shell :refer [sh]]
-   [clojure.string :as str]
    [borkdude.gh-release-artifact.internal :as ghr]))
 
 ;; A simple mime type utility from https://github.com/ring-clojure/ring/blob/master/ring-core/src/ring/util/mime_type.clj
@@ -143,9 +137,9 @@
                      :overwrite true})
 
   (release-artifact {:org "borkdude"
-                    :repo "test-repo"
-                    :tag "v0.0.15"
-                    :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
-                    :file "README.md"
-                    :overwrite false})
+                     :repo "test-repo"
+                     :tag "v0.0.15"
+                     :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
+                     :file "README.md"
+                     :overwrite false})
   )

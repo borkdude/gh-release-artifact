@@ -187,20 +187,29 @@
         upload-url (str/replace upload-url "{?name,label}" "")
         assets (list-assets opts)
         file-name (fs/file-name file)
-        asset (some #(when (= file-name (:name %)) %) assets)]
+        asset (some #(when (= file-name (:name %)) %) assets)
+        overwrite (get opts :overwrite true)]
     (when asset
-      (curl/delete (:url asset) (with-gh-headers {:throw false})))
-    (-> (curl/post upload-url
-                   {:throw false
-                    :query-params {"name" (fs/file-name file)
-                                   "label" (fs/file-name file)}
-                    :headers {"Authorization" (str "token " token)
-                              "Content-Type"
-                              (or content-type
-                                  (get default-mime-types (fs/extension file)))}
-                    :body (fs/file file)})
-        :body
-        (cheshire/parse-string true))))
+      (when overwrite (curl/delete (:url asset) (with-gh-headers {:throw false}))))
+    (when (or (not asset)
+              ;; in case of asset, overwrite must be true, which it is by default
+              overwrite)
+      (-> (curl/post upload-url
+                     {:throw false
+                      :query-params {"name" (fs/file-name file)
+                                     "label" (fs/file-name file)}
+                      :headers {"Authorization" (str "token " token)
+                                "Content-Type"
+                                (or content-type
+                                    (get default-mime-types (fs/extension file)))}
+                      :body (fs/file file)})
+          :body
+          (cheshire/parse-string true)))))
+
+(defn upload-asset
+  "Same as `overwrite-asset` but does not overwrite existing assets."
+  [opts]
+  (overwrite-asset (assoc opts :overwrite false)))
 
 (comment
   (overwrite-asset {:org "borkdude"
@@ -208,4 +217,11 @@
                     :tag "v0.0.15"
                     :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
                     :file "README.md"})
+
+  (overwrite-asset {:org "borkdude"
+                    :repo "test-repo"
+                    :tag "v0.0.15"
+                    :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
+                    :file "README.md"
+                    :overwrite false})
   )

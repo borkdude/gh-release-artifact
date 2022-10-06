@@ -109,18 +109,38 @@
 (defn ^:no-doc overwrite-asset [opts]
   (ghr/overwrite-asset opts))
 
-(defn release-artifact [opts]
-  (overwrite-asset (assoc opts :overwrite false)))
+(defn release-artifact
+  "Uploads artifact to github release. Creates (draft) release if there is
+  no existing release yet.
+
+  Required options:
+
+  * `:org` - Github organization.
+  * `:repo` - Github repository.
+  * `:tag` - Tag of release.
+  * `:file` - The file to be uploaded.
+
+  Optional options:
+
+  * `:commit` - Commit to be associated with release. Defaults to current commit.
+  * `:sha256` - Upload a `file.sha256` hash file along with `:file`.
+  * `:overwrite` - Overwrite exiting upload. Defaults to `false`.
+  * `:draft` - Created draft release. Defaults to `true`."
+  [{:keys [overwrite]
+    :or {overwrite false}
+    :as opts}]
+  (overwrite-asset (assoc opts :overwrite overwrite)))
 
 (comment
-  (overwrite-asset {:org "borkdude"
-                    :repo "test-repo"
-                    :tag "v0.0.15"
-                    :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
-                    :file "README.md"
-                    :sha256 true})
+  (release-artifact {:org "borkdude"
+                     :repo "test-repo"
+                     :tag "v0.0.15"
+                     :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
+                     :file "README.md"
+                     :sha256 true
+                     :overwrite true})
 
-  (overwrite-asset {:org "borkdude"
+  (release-artifact {:org "borkdude"
                     :repo "test-repo"
                     :tag "v0.0.15"
                     :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"

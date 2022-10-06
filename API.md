@@ -1,7 +1,7 @@
 # Table of contents
 -  [`borkdude.gh-release-artifact`](#borkdude.gh-release-artifact) 
     -  [`default-mime-types`](#borkdude.gh-release-artifact/default-mime-types) - A map of file extensions to mime-types.
-    -  [`release-artifact`](#borkdude.gh-release-artifact/release-artifact)
+    -  [`release-artifact`](#borkdude.gh-release-artifact/release-artifact) - Uploads artifact to github release.
 
 -----
 # <a name="borkdude.gh-release-artifact">borkdude.gh-release-artifact</a>
@@ -16,10 +16,27 @@
 
 A map of file extensions to mime-types.
 
-## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L112-L113)
+## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L112-L132)
 <a name="borkdude.gh-release-artifact/release-artifact"></a>
 ``` clojure
 
-(release-artifact opts)
+(release-artifact {:keys [overwrite], :or {overwrite false}, :as opts})
 ```
 
+
+Uploads artifact to github release. Creates (draft) release if there is
+  no existing release yet.
+
+  Required options:
+
+  * `:org` - Github organization.
+  * `:repo` - Github repository.
+  * `:tag` - Tag of release.
+  * `:file` - The file to be uploaded.
+
+  Optional options:
+
+  * `:commit` - Commit to be associated with release. Defaults to current commit.
+  * `:sha256` - Upload a `file.sha256` hash file along with `:file`.
+  * `:overwrite` - Overwrite exiting upload. Defaults to `false`.
+  * `:draft` - Created draft release. Defaults to `true`.

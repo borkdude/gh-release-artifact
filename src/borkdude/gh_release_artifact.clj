@@ -4,7 +4,9 @@
    [babashka.fs :as fs]
    [cheshire.core :as cheshire]
    [clojure.java.shell :refer [sh]]
-   [clojure.string :as str]))
+   [clojure.string :as str]
+   [clj-commons.digest :as digest]
+   [clojure.java.io :as io]))
 
 (def token (System/getenv "GITHUB_TOKEN"))
 
@@ -188,30 +190,50 @@
         assets (list-assets opts)
         file-name (fs/file-name file)
         asset (some #(when (= file-name (:name %)) %) assets)
-        overwrite (get opts :overwrite true)]
+        overwrite (get opts :overwrite true)
+        sha256 (get opts :sha256)]
     (when asset
       (when overwrite (curl/delete (:url asset) (with-gh-headers {:throw false}))))
     (when (or (not asset)
               ;; in case of asset, overwrite must be true, which it is by default
               overwrite)
-      (-> (curl/post upload-url
-                     {:throw false
-                      :query-params {"name" (fs/file-name file)
-                                     "label" (fs/file-name file)}
-                      :headers {"Authorization" (str "token " token)
-                                "Content-Type"
-                                (or content-type
-                                    (get default-mime-types (fs/extension file)))}
-                      :body (fs/file file)})
-          :body
-          (cheshire/parse-string true)))))
+      (let [response (curl/post upload-url
+                                {:throw false
+                                 :query-params {"name" (fs/file-name file)
+                                                "label" (fs/file-name file)}
+                                 :headers {"Authorization" (str "token " token)
+                                           "Content-Type"
+                                           (or content-type
+                                               (get default-mime-types (fs/extension file)))}
+                                 :body (fs/file file)})
+            body (-> response :body
+                     (cheshire/parse-string true))]
+        (prn (:status response))
+        (when (and sha256 (= 201 (:status response)))
+          (let [sha256-fname (str (fs/file-name file) ".sha256")
+                tmp-dir (fs/create-temp-dir)
+                hash (digest/sha-256 (fs/file file))
+                sha256-file (fs/file tmp-dir sha256-fname)
+                existing-sha-remote (some #(when (= sha256-fname (:name %)) %) assets)]
+            (when existing-sha-remote
+              (curl/delete (:url existing-sha-remote) (with-gh-headers {:throw false})))
+            (spit sha256-file hash)
+            (curl/post upload-url
+                       {:throw false
+                        :query-params {"name" sha256-fname
+                                       "label" sha256-fname}
+                        :headers {"Authorization" (str "token " token)
+                                  "Content-Type" "text/plain"}
+                        :body (fs/file sha256-file)})))
+        body))))
 
 (comment
   (overwrite-asset {:org "borkdude"
                     :repo "test-repo"
                     :tag "v0.0.15"
                     :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
-                    :file "README.md"})
+                    :file "README.md"
+                    :sha256 true})
 
   (overwrite-asset {:org "borkdude"
                     :repo "test-repo"

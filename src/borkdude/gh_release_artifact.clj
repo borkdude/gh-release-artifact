@@ -125,7 +125,8 @@
   * `:commit` - Commit to be associated with release. Defaults to current commit.
   * `:sha256` - Upload a `file.sha256` hash file along with `:file`.
   * `:overwrite` - Overwrite exiting upload. Defaults to `false`.
-  * `:draft` - Created draft release. Defaults to `true`."
+  * `:draft` - Created draft release. Defaults to `true`.
+  * `:content-type` - The file's content type. Default to lookup by extension in `default-mime-types`."
   [{:keys [overwrite]
     :or {overwrite false}
     :as opts}]

@@ -16,7 +16,7 @@
 
 A map of file extensions to mime-types.
 
-## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L112-L132)
+## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L112-L133)
 <a name="borkdude.gh-release-artifact/release-artifact"></a>
 ``` clojure
 
@@ -40,3 +40,4 @@ Uploads artifact to github release. Creates (draft) release if there is
   * `:sha256` - Upload a `file.sha256` hash file along with `:file`.
   * `:overwrite` - Overwrite exiting upload. Defaults to `false`.
   * `:draft` - Created draft release. Defaults to `true`.
+  * `:content-type` - The file's content type. Default to lookup by extension in [`default-mime-types`](#borkdude.gh-release-artifact/default-mime-types).

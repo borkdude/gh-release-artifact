@@ -1,8 +1,28 @@
 # gh-release-artifact
 
-A babashka lib to deploy artifacts to Github releases.
+A babashka and Clojure lib to deploy artifacts to Github releases.
 
 See [API.md](API.md) for the API.
+
+Use within babashka as follows. Add to `deps.edn` or `bb.edn`:
+
+```
+{:deps {io.github.borkdude/gh-release-artifact {:git/sha "05f8d8659e6805d513c59447ff41dc8497878462"}}}
+```
+
+Then in your code:
+
+``` clojure
+(require '[borkdude.gh-release-artifact :as ghr])
+
+(ghr/release-artifact {:org "borkdude"
+                       :repo "test-repo"
+                       :tag "v0.0.15"
+                       :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
+                       :file "README.md"
+                       :sha256 true
+                       :overwrite true})
+```
 
 ## License
 

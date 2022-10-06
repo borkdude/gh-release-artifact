@@ -106,10 +106,10 @@
    "xwd"      "image/x-xwindowdump"
    "zip"      "application/zip"})
 
-(defn overwrite-asset [opts]
+(defn ^:no-doc overwrite-asset [opts]
   (ghr/overwrite-asset opts))
 
-(defn upload-asset [opts]
+(defn release-artifact [opts]
   (overwrite-asset (assoc opts :overwrite false)))
 
 (comment

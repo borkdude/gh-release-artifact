@@ -1,8 +1,7 @@
 # Table of contents
 -  [`borkdude.gh-release-artifact`](#borkdude.gh-release-artifact) 
     -  [`default-mime-types`](#borkdude.gh-release-artifact/default-mime-types) - A map of file extensions to mime-types.
-    -  [`overwrite-asset`](#borkdude.gh-release-artifact/overwrite-asset)
-    -  [`upload-asset`](#borkdude.gh-release-artifact/upload-asset)
+    -  [`release-artifact`](#borkdude.gh-release-artifact/release-artifact)
 -  [`borkdude.gh-release-artifact.internal`](#borkdude.gh-release-artifact.internal) 
     -  [`-release-for`](#borkdude.gh-release-artifact.internal/-release-for)
     -  [`create-release`](#borkdude.gh-release-artifact.internal/create-release)
@@ -33,19 +32,11 @@
 
 A map of file extensions to mime-types.
 
-## <a name="borkdude.gh-release-artifact/overwrite-asset">`overwrite-asset`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L109-L110)
-<a name="borkdude.gh-release-artifact/overwrite-asset"></a>
+## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L112-L113)
+<a name="borkdude.gh-release-artifact/release-artifact"></a>
 ``` clojure
 
-(overwrite-asset opts)
-```
-
-
-## <a name="borkdude.gh-release-artifact/upload-asset">`upload-asset`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L112-L113)
-<a name="borkdude.gh-release-artifact/upload-asset"></a>
-``` clojure
-
-(upload-asset opts)
+(release-artifact opts)
 ```
 
 

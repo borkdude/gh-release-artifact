@@ -206,11 +206,6 @@
           :body
           (cheshire/parse-string true)))))
 
-(defn upload-asset
-  "Same as `overwrite-asset` but does not overwrite existing assets."
-  [opts]
-  (overwrite-asset (assoc opts :overwrite false)))
-
 (comment
   (overwrite-asset {:org "borkdude"
                     :repo "test-repo"

@@ -110,8 +110,9 @@
   (ghr/overwrite-asset opts))
 
 (defn release-artifact
-  "Uploads artifact to github release. Creates (draft) release if there is
-  no existing release yet.
+  "Uploads artifact to github release. Creates (draft) release if there
+  is no existing release yet. Uses token from `GITHUB_TOKEN`
+  environment variable for auth.
 
   Required options:
 

@@ -16,7 +16,7 @@
 
 A map of file extensions to mime-types.
 
-## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L112-L133)
+## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L112-L134)
 <a name="borkdude.gh-release-artifact/release-artifact"></a>
 ``` clojure
 
@@ -24,8 +24,9 @@ A map of file extensions to mime-types.
 ```
 
 
-Uploads artifact to github release. Creates (draft) release if there is
-  no existing release yet.
+Uploads artifact to github release. Creates (draft) release if there
+  is no existing release yet. Uses token from `GITHUB_TOKEN`
+  environment variable for auth.
 
   Required options:
 

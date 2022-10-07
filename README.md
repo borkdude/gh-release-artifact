@@ -1,6 +1,10 @@
 # gh-release-artifact
 
 A babashka and Clojure lib to deploy artifacts to Github releases.
+For this to work you need to set an environment variable named
+`GITHUB_TOKEN` with your personal access token. You can create 
+the token on github.com under your profile:
+Settings -> Developer settings -> Personal access tokens.
 
 See [API.md](API.md) for the API.
 

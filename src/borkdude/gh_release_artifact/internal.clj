@@ -30,6 +30,7 @@
       (cheshire/parse-string true)))
 
 (defn get-draft-release [org repo tag]
+  (prn :get-draft-release org repo tag)
   (some #(when (= tag (:tag_name %)) %)
         ;; always choose oldest release to prevent race condition
         (reverse (list-releases org repo))))

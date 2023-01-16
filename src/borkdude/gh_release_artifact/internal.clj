@@ -67,11 +67,15 @@
             created-id (:id resp)
             release (loop [attempt 0]
                       (when (< attempt 10)
-                        (Thread/sleep (* attempt 100))
                         ;; eventual consistency...
                         (if-let [dr (get-draft-release org repo tag)]
                           dr
-                          (recur (inc attempt)))))
+                          (do
+                            (let [retry-ms (* attempt 1000)]
+                              (binding [*out* *err*]
+                                (println (format "[gh-release-artifact] Request to GET created release did not succeed. Retrying in %s ms." retry-ms))
+                                (Thread/sleep retry-ms)))
+                            (recur (inc attempt))))))
             release-id (:id release)]
         (prn :release-id release-id)
         (when-not (= created-id release-id)

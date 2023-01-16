@@ -67,7 +67,7 @@
             created-id (:id resp)
             release (loop [attempt 0]
                       (when (< attempt 10)
-                        (Thread/sleep (* attempt 50))
+                        (Thread/sleep (* attempt 100))
                         ;; eventual consistency...
                         (if-let [dr (get-draft-release org repo tag)]
                           dr

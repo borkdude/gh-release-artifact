@@ -63,7 +63,7 @@
 (defn -release-for [{:keys [:org :repo :tag] :as opts}]
   (or (get-draft-release org repo tag)
       (let [resp (create-release opts)
-            _ (prn :created-release resp)
+            _ (prn :created (:id resp) (:upload_url resp))
             created-id (:id resp)
             release (loop [attempt 0]
                       (when (< attempt 10)

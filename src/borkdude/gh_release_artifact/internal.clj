@@ -185,6 +185,7 @@
 
 (defn overwrite-asset [{:keys [:file :content-type] :as opts}]
   (let [release (release-for opts)
+        _ (prn :release release)
         upload-url (:upload_url release)
         upload-url (str/replace upload-url "{?name,label}" "")
         assets (list-assets opts)

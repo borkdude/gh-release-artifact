@@ -30,7 +30,6 @@
       (cheshire/parse-string true)))
 
 (defn get-draft-release [org repo tag]
-  (prn :get-draft-release org repo tag)
   (some #(when (= tag (:tag_name %)) %)
         ;; always choose oldest release to prevent race condition
         (reverse (list-releases org repo))))
@@ -64,6 +63,7 @@
 (defn -release-for [{:keys [:org :repo :tag] :as opts}]
   (or (get-draft-release org repo tag)
       (let [resp (create-release opts)
+            _ (prn :created-release resp)
             created-id (:id resp)
             release (loop [attempt 0]
                       (when (< attempt 10)
@@ -73,6 +73,7 @@
                           dr
                           (recur (inc attempt)))))
             release-id (:id release)]
+        (prn :release-id release-id)
         (when-not (= created-id release-id)
           ;; in this scenario some other process created a new release just before username
           (delete-release (assoc opts :id created-id)))

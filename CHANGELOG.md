@@ -4,7 +4,7 @@
 
 ## v0.2.0
 
-- Replace `babashka.curl` for `babashka.http-client`
+- Replace `babashka.curl` with `babashka.http-client`
 - Bump `babashka.fs`
 
 ## v0.1.0

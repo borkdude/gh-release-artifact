@@ -1,4 +1,4 @@
-{:deps {babashka/babashka.curl {:mvn/version "0.1.2"}
-        babashka/fs {:mvn/version "0.1.11"}
+{:deps {babashka/fs {:mvn/version "0.3.17"}
         cheshire/cheshire {:mvn/version "5.11.0"}
-        org.clj-commons/digest {:mvn/version "1.4.100"}}}
+        org.clj-commons/digest {:mvn/version "1.4.100"}
+        org.babashka/http-client {:mvn/version "0.1.6"}}}

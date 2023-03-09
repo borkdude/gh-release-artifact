@@ -1,7 +1,7 @@
 (ns borkdude.gh-release-artifact.internal
   {:no-doc true}
   (:require
-   [babashka.curl :as curl]
+   [babashka.http-client :as http]
    [babashka.fs :as fs]
    [cheshire.core :as cheshire]
    [clj-commons.digest :as digest]
@@ -24,7 +24,7 @@
           "Accept" "application/vnd.github.v3+json"))
 
 (defn list-releases [org repo]
-  (-> (curl/get (release-endpoint org repo)
+  (-> (http/get (release-endpoint org repo)
                 (with-gh-headers {}))
       :body
       (cheshire/parse-string true)))
@@ -44,7 +44,7 @@
                        :or {draft true
                             target-commitish (or commit
                                                  (current-commit))}}]
-  (-> (curl/post (release-endpoint org repo)
+  (-> (http/post (release-endpoint org repo)
                  (with-gh-headers
                    {:body
                     (cheshire/generate-string (cond-> {:tag_name tag
@@ -58,7 +58,7 @@
       (cheshire/parse-string true)))
 
 (defn delete-release [{:keys [:org :repo :id]}]
-  (curl/delete (path (release-endpoint org repo) id) {:throw false}))
+  (http/delete (path (release-endpoint org repo) id) {:throw false}))
 
 (defn -release-for [{:keys [:org :repo :tag] :as opts}]
   (or (get-draft-release org repo tag)
@@ -81,7 +81,7 @@
 
 (defn list-assets [opts]
   (let [release (release-for opts)]
-    (-> (curl/get (:assets_url release) (with-gh-headers {}))
+    (-> (http/get (:assets_url release) (with-gh-headers {}))
         :body
         (cheshire/parse-string true))))
 
@@ -193,11 +193,11 @@
         overwrite (get opts :overwrite true)
         sha256 (get opts :sha256)]
     (when asset
-      (when overwrite (curl/delete (:url asset) (with-gh-headers {:throw false}))))
+      (when overwrite (http/delete (:url asset) (with-gh-headers {:throw false}))))
     (when (or (not asset)
               ;; in case of asset, overwrite must be true, which it is by default
               overwrite)
-      (let [response (curl/post upload-url
+      (let [response (http/post upload-url
                                 {:throw false
                                  :query-params {"name" (fs/file-name file)
                                                 "label" (fs/file-name file)}
@@ -216,9 +216,9 @@
                 sha256-file (fs/file tmp-dir sha256-fname)
                 existing-sha-remote (some #(when (= sha256-fname (:name %)) %) assets)]
             (when existing-sha-remote
-              (curl/delete (:url existing-sha-remote) (with-gh-headers {:throw false})))
+              (http/delete (:url existing-sha-remote) (with-gh-headers {:throw false})))
             (spit sha256-file hash)
-            (curl/post upload-url
+            (http/post upload-url
                        {:throw false
                         :query-params {"name" sha256-fname
                                        "label" sha256-fname}

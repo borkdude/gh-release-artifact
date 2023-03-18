@@ -232,7 +232,7 @@
                     :repo "test-repo"
                     :tag "v0.0.15"
                     :commit "8495a6b872637ea31879c5d56160b8d8e94c9d1c"
-                    :file "README.md"
+                    :file "/Users/borkdude/dev/babashka/logo/babashka-blue-yellow.png"
                     :sha256 true})
 
   (overwrite-asset {:org "borkdude"

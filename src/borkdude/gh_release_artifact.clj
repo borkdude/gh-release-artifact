@@ -29,12 +29,14 @@
   * `:overwrite` - Overwrite exiting upload. Defaults to `false`.
   * `:draft` - Created draft release. Defaults to `true`.
   * `:content-type` - The file's content type. Default to lookup by extension in `default-mime-types`.
-  * `:retries` - Attempts per request, retrying a 5xx status. Defaults to `3`.
+  * `:retries` - Attempts per request, retrying a server error and a rate
+    limit. Defaults to `3`.
   * `:retry-pause-ms` - Pause before the second attempt, growing with each
-    one. Defaults to `1000`.
+    one. A `Retry-After` header takes its place. Defaults to `1000`.
 
   Throws when Github does not accept the upload. Replacing an asset keeps
-  the existing one until the new bytes are there."
+  an asset of that name on the release throughout: the new one once the
+  upload is through, the existing one otherwise."
   [{:keys [overwrite]
     :or {overwrite false}
     :as opts}]

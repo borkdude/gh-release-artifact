@@ -183,19 +183,39 @@
    "xwd"      "image/x-xwindowdump"
    "zip"      "application/zip"})
 
+(defn- retry-after-ms
+  "The pause a rate limit asks for, in milliseconds, or nil."
+  [response]
+  (when-let [header (get-in response [:headers "retry-after"])]
+    (try (* 1000 (Long/parseLong (str/trim header)))
+         (catch Exception _ nil))))
+
+(defn- retriable?
+  "True for an answer that says to come back: a server error, or a rate
+  limit, which Github reports as 429 or as 403 with Retry-After."
+  [response]
+  (let [status (:status response)]
+    (or (and status (<= 500 status 599))
+        (= 429 status)
+        (and (= 403 status) (retry-after-ms response)))))
+
 (defn- with-retry
-  "Calls f, which returns a response map. Retries a 5xx status or an
-  exception, pausing longer before each attempt. Returns the last response,
-  or throws the last exception."
-  [f {:keys [retries retry-pause-ms] :or {retries 3 retry-pause-ms 1000}}]
-  (loop [attempt 1]
-    (let [[response error] (try [(f) nil] (catch Exception e [nil e]))
-          status (:status response)]
-      (if (and (< attempt (long retries))
-               (or error (and status (<= 500 status 599))))
-        (do (Thread/sleep (* attempt (long retry-pause-ms)))
-            (recur (inc attempt)))
-        (if error (throw error) response)))))
+  "Calls f, which returns a response map. Retries a server error, a rate
+  limit and an exception, pausing as long as Retry-After asks or longer
+  before each attempt. Calls before-retry, when given, before a new
+  attempt. Returns the last response, or throws the last exception."
+  [f {:keys [retries retry-pause-ms before-retry]}]
+  (let [retries (or retries 3)
+        retry-pause-ms (or retry-pause-ms 1000)]
+    (loop [attempt 1]
+      (let [[response error] (try [(f) nil] (catch Exception e [nil e]))]
+        (if (and (< attempt (long retries))
+                 (or error (retriable? response)))
+          (do (Thread/sleep (long (or (retry-after-ms response)
+                                      (* attempt (long retry-pause-ms)))))
+              (when before-retry (before-retry))
+              (recur (inc attempt)))
+          (if error (throw error) response))))))
 
 (defn- fail [action asset-name response]
   (throw (ex-info (str action " " asset-name " failed with status " (:status response))
@@ -203,22 +223,38 @@
                    :status (:status response)
                    :body (:body response)})))
 
+(defn- drop-asset-named
+  "Deletes the asset of this name, if the release has one. An attempt that
+  failed can still have created it, and Github refuses a second asset of a
+  name it already has, so this runs before an upload is tried again. Its own
+  failure is left to the upload that follows."
+  [asset-name opts]
+  (try
+    (when-let [asset (some #(when (= asset-name (:name %)) %) (list-assets opts))]
+      (http/delete (:url asset) (with-gh-headers {:throw false})))
+    (catch Exception _ nil)))
+
 (defn- post-asset
-  "Uploads file under asset-name and returns the asset. Throws when GitHub
+  "Uploads file under asset-name and returns the asset. Throws when Github
   does not create it."
   [upload-url file asset-name content-type opts]
-  (let [response (with-retry
-                   #(http/post upload-url
-                               {:throw false
-                                :query-params {"name" asset-name
-                                               "label" asset-name}
-                                :headers {"Authorization" (str "token " (token))
-                                          "Content-Type"
-                                          (or content-type
-                                              (get default-mime-types (fs/extension file)))}
-                                :body (fs/file file)})
-                   opts)]
+  (let [drop! #(drop-asset-named asset-name opts)
+        response (try (with-retry
+                        #(http/post upload-url
+                                    {:throw false
+                                     :query-params {"name" asset-name
+                                                    "label" asset-name}
+                                     :headers {"Authorization" (str "token " (token))
+                                               "Content-Type"
+                                               (or content-type
+                                                   (get default-mime-types (fs/extension file)))}
+                                     :body (fs/file file)})
+                        (assoc opts :before-retry drop!))
+                      (catch Exception e (drop!) (throw e)))]
     (when-not (= 201 (:status response))
+      ;; the answers worth retrying are the ones that can have created the
+      ;; asset anyway, so giving up on one means clearing it
+      (when (retriable? response) (drop!))
       (fail "Uploading" asset-name response))
     (-> response :body (cheshire/parse-string true))))
 
@@ -232,7 +268,15 @@
     (when-not (or (<= 200 status 299) (= 404 status))
       (fail "Deleting" (:name asset) response))))
 
-(defn- rename-asset [asset asset-name opts]
+(defn- discard
+  "Deletes asset, ignoring a failure. Used to clean up while another error
+  is on its way out, which is the one that should surface."
+  [asset opts]
+  (try (delete-asset asset opts) (catch Exception _ nil)))
+
+(defn- rename-asset
+  "Gives asset the name asset-name and returns it."
+  [asset asset-name opts]
   (let [response (with-retry
                    #(http/patch (:url asset)
                                 (with-gh-headers
@@ -241,24 +285,38 @@
                                                                     :label asset-name})}))
                    opts)]
     (when-not (= 200 (:status response))
-      (fail "Renaming" (:name asset) response))
+      (fail "Renaming to" asset-name response))
     (-> response :body (cheshire/parse-string true))))
 
 (defn- replace-asset
   "Uploads file as asset-name and returns the asset. When existing is an
-  asset of that name, the new bytes go up under a temporary name first and
-  the existing asset is deleted once they are there, so a failed upload
-  leaves the release with the asset it had."
+  asset of that name, the new bytes go up under a temporary name, the
+  existing asset moves aside under another, and the new asset then takes
+  the name. Every step that fails puts the existing asset back, so the
+  release keeps an asset of that name throughout: the new one once the
+  whole exchange is through, the existing one otherwise."
   [upload-url file asset-name content-type existing opts]
   (if-not existing
     (post-asset upload-url file asset-name content-type opts)
-    (let [tmp-name (str asset-name ".upload-" (java.util.UUID/randomUUID))
-          tmp (post-asset upload-url file tmp-name content-type opts)]
-      (try (delete-asset existing opts)
+    (let [suffix (java.util.UUID/randomUUID)
+          tmp (post-asset upload-url file (str asset-name ".upload-" suffix)
+                          content-type opts)]
+      (try (rename-asset existing (str asset-name ".replaced-" suffix) opts)
            (catch Exception e
-             (delete-asset tmp opts)
+             (discard tmp opts)
              (throw e)))
-      (rename-asset tmp asset-name opts))))
+      (let [renamed (try (rename-asset tmp asset-name opts)
+                         (catch Exception e
+                           ;; the name is free again, so the existing asset
+                           ;; goes back under it
+                           (try (rename-asset existing asset-name opts)
+                                (catch Exception _ nil))
+                           (discard tmp opts)
+                           (throw e)))]
+        ;; the new asset holds the name; a leftover copy of the old one is
+        ;; not worth failing the release over
+        (discard existing opts)
+        renamed))))
 
 (defn overwrite-asset [{:keys [:file :content-type] :as opts}]
   (let [release (release-for opts)

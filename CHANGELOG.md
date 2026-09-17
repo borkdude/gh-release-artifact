@@ -2,7 +2,7 @@
 
 [gh-release-artifact](https://github.com/borkdude/gh-release-artifact): Upload artifacts to Github releases idempotently
 
-## v0.3.2
+## Unreleased
 
 - Throw when Github does not accept an upload, instead of printing the status
   and returning. A failed upload no longer leaves a green build.

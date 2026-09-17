@@ -2,6 +2,19 @@
 
 [gh-release-artifact](https://github.com/borkdude/gh-release-artifact): Upload artifacts to Github releases idempotently
 
+## Unreleased
+
+- Throw when Github does not accept an upload, instead of printing the status
+  and returning. A failed upload no longer leaves a green build.
+- Upload the new bytes before touching the existing asset when replacing one,
+  and put the existing asset back when a later step fails. A failed upload
+  used to leave the release without the asset, because the old one was
+  deleted first.
+- Retry a server error and a rate limit, three attempts by default, honouring
+  `Retry-After` up to a minute. `:retries` and `:retry-pause-ms` set this. An
+  attempt that Github answered with an error can still have created the
+  asset, so the next attempt clears it first, and so does giving up.
+
 ## v0.2.1
 
 - Fix binary file uploads by upgrading http-client

@@ -28,7 +28,20 @@
   * `:sha256` - Upload a `file.sha256` hash file along with `:file`.
   * `:overwrite` - Overwrite exiting upload. Defaults to `false`.
   * `:draft` - Created draft release. Defaults to `true`.
-  * `:content-type` - The file's content type. Default to lookup by extension in `default-mime-types`."
+  * `:content-type` - The file's content type. Default to lookup by extension in `default-mime-types`.
+  * `:retries` - Attempts per request, retrying a server error and a rate
+    limit. Defaults to `3`.
+  * `:retry-pause-ms` - Pause before the second attempt, growing with each
+    one. A `Retry-After` header takes its place, up to a minute. Defaults to
+    `1000`.
+
+  Throws when Github does not accept the upload. Replacing an asset uploads
+  the new bytes before it touches the existing asset, and puts the existing
+  one back when a later step fails, so the release holds the new bytes once
+  the upload is through and the existing ones otherwise. Github refuses two
+  assets of one name, so the exchange has a moment in which neither holds
+  it. A failure there throws with `:rolled-back false` and `:parked-as`, the
+  name the existing asset is left under."
   [{:keys [overwrite]
     :or {overwrite false}
     :as opts}]

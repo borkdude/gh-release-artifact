@@ -4,4 +4,11 @@
  :tasks {quickdoc
          {:task (exec 'quickdoc.api/quickdoc)
           :exec-args {:git/branch "main"
-                      :github/repo "https://github.com/borkdude/gh-release-artifact"}}}}
+                      :github/repo "https://github.com/borkdude/gh-release-artifact"}}
+         test
+         {:doc "Run the tests. They stub the Github calls, so no token is needed."
+          :extra-paths ["test"]
+          :requires ([borkdude.gh-release-artifact-test]
+                     [clojure.test :as t])
+          :task (let [{:keys [fail error]} (t/run-tests 'borkdude.gh-release-artifact-test)]
+                  (when (pos? (+ fail error)) (System/exit 1)))}}}

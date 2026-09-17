@@ -183,6 +183,83 @@
    "xwd"      "image/x-xwindowdump"
    "zip"      "application/zip"})
 
+(defn- with-retry
+  "Calls f, which returns a response map. Retries a 5xx status or an
+  exception, pausing longer before each attempt. Returns the last response,
+  or throws the last exception."
+  [f {:keys [retries retry-pause-ms] :or {retries 3 retry-pause-ms 1000}}]
+  (loop [attempt 1]
+    (let [[response error] (try [(f) nil] (catch Exception e [nil e]))
+          status (:status response)]
+      (if (and (< attempt (long retries))
+               (or error (and status (<= 500 status 599))))
+        (do (Thread/sleep (* attempt (long retry-pause-ms)))
+            (recur (inc attempt)))
+        (if error (throw error) response)))))
+
+(defn- fail [action asset-name response]
+  (throw (ex-info (str action " " asset-name " failed with status " (:status response))
+                  {:asset asset-name
+                   :status (:status response)
+                   :body (:body response)})))
+
+(defn- post-asset
+  "Uploads file under asset-name and returns the asset. Throws when GitHub
+  does not create it."
+  [upload-url file asset-name content-type opts]
+  (let [response (with-retry
+                   #(http/post upload-url
+                               {:throw false
+                                :query-params {"name" asset-name
+                                               "label" asset-name}
+                                :headers {"Authorization" (str "token " (token))
+                                          "Content-Type"
+                                          (or content-type
+                                              (get default-mime-types (fs/extension file)))}
+                                :body (fs/file file)})
+                   opts)]
+    (when-not (= 201 (:status response))
+      (fail "Uploading" asset-name response))
+    (-> response :body (cheshire/parse-string true))))
+
+(defn- delete-asset
+  "Deletes asset. An asset that is already gone counts as deleted."
+  [asset opts]
+  (let [response (with-retry
+                   #(http/delete (:url asset) (with-gh-headers {:throw false}))
+                   opts)
+        status (:status response)]
+    (when-not (or (<= 200 status 299) (= 404 status))
+      (fail "Deleting" (:name asset) response))))
+
+(defn- rename-asset [asset asset-name opts]
+  (let [response (with-retry
+                   #(http/patch (:url asset)
+                                (with-gh-headers
+                                  {:throw false
+                                   :body (cheshire/generate-string {:name asset-name
+                                                                    :label asset-name})}))
+                   opts)]
+    (when-not (= 200 (:status response))
+      (fail "Renaming" (:name asset) response))
+    (-> response :body (cheshire/parse-string true))))
+
+(defn- replace-asset
+  "Uploads file as asset-name and returns the asset. When existing is an
+  asset of that name, the new bytes go up under a temporary name first and
+  the existing asset is deleted once they are there, so a failed upload
+  leaves the release with the asset it had."
+  [upload-url file asset-name content-type existing opts]
+  (if-not existing
+    (post-asset upload-url file asset-name content-type opts)
+    (let [tmp-name (str asset-name ".upload-" (java.util.UUID/randomUUID))
+          tmp (post-asset upload-url file tmp-name content-type opts)]
+      (try (delete-asset existing opts)
+           (catch Exception e
+             (delete-asset tmp opts)
+             (throw e)))
+      (rename-asset tmp asset-name opts))))
+
 (defn overwrite-asset [{:keys [:file :content-type] :as opts}]
   (let [release (release-for opts)
         upload-url (:upload_url release)
@@ -192,39 +269,20 @@
         asset (some #(when (= file-name (:name %)) %) assets)
         overwrite (get opts :overwrite true)
         sha256 (get opts :sha256)]
-    (when asset
-      (when overwrite (http/delete (:url asset) (with-gh-headers {:throw false}))))
     (when (or (not asset)
               ;; in case of asset, overwrite must be true, which it is by default
               overwrite)
-      (let [response (http/post upload-url
-                                {:throw false
-                                 :query-params {"name" (fs/file-name file)
-                                                "label" (fs/file-name file)}
-                                 :headers {"Authorization" (str "token " (token))
-                                           "Content-Type"
-                                           (or content-type
-                                               (get default-mime-types (fs/extension file)))}
-                                 :body (fs/file file)})
-            body (-> response :body
-                     (cheshire/parse-string true))]
-        (prn (:status response))
-        (when (and sha256 (= 201 (:status response)))
-          (let [sha256-fname (str (fs/file-name file) ".sha256")
+      (let [body (replace-asset upload-url file file-name content-type asset opts)]
+        (when sha256
+          ;; after the file itself, so that a checksum never outlives the
+          ;; bytes it describes
+          (let [sha256-fname (str file-name ".sha256")
                 tmp-dir (fs/create-temp-dir)
-                hash (digest/sha-256 (fs/file file))
                 sha256-file (fs/file tmp-dir sha256-fname)
                 existing-sha-remote (some #(when (= sha256-fname (:name %)) %) assets)]
-            (when existing-sha-remote
-              (http/delete (:url existing-sha-remote) (with-gh-headers {:throw false})))
-            (spit sha256-file hash)
-            (http/post upload-url
-                       {:throw false
-                        :query-params {"name" sha256-fname
-                                       "label" sha256-fname}
-                        :headers {"Authorization" (str "token " (token))
-                                  "Content-Type" "text/plain"}
-                        :body (fs/file sha256-file)})))
+            (spit sha256-file (digest/sha-256 (fs/file file)))
+            (replace-asset upload-url sha256-file sha256-fname "text/plain"
+                           existing-sha-remote opts)))
         body))))
 
 (comment

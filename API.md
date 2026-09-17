@@ -11,12 +11,12 @@
 
 
 
-## <a name="borkdude.gh-release-artifact/default-mime-types">`default-mime-types`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L12-L107)
+## <a name="borkdude.gh-release-artifact/default-mime-types">`default-mime-types`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L6-L8)
 <a name="borkdude.gh-release-artifact/default-mime-types"></a>
 
 A map of file extensions to mime-types.
 
-## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L112-L134)
+## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L13-L41)
 <a name="borkdude.gh-release-artifact/release-artifact"></a>
 ``` clojure
 
@@ -42,3 +42,9 @@ Uploads artifact to github release. Creates (draft) release if there
   * `:overwrite` - Overwrite exiting upload. Defaults to `false`.
   * `:draft` - Created draft release. Defaults to `true`.
   * `:content-type` - The file's content type. Default to lookup by extension in [`default-mime-types`](#borkdude.gh-release-artifact/default-mime-types).
+  * `:retries` - Attempts per request, retrying a 5xx status. Defaults to `3`.
+  * `:retry-pause-ms` - Pause before the second attempt, growing with each
+    one. Defaults to `1000`.
+
+  Throws when Github does not accept the upload. Replacing an asset keeps
+  the existing one until the new bytes are there.

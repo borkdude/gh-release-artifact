@@ -11,4 +11,9 @@
           :requires ([borkdude.gh-release-artifact-test]
                      [clojure.test :as t])
           :task (let [{:keys [fail error]} (t/run-tests 'borkdude.gh-release-artifact-test)]
-                  (when (pos? (+ fail error)) (System/exit 1)))}}}
+                  (when (pos? (+ fail error)) (System/exit 1)))}
+         smoke
+         {:doc "Upload to a real draft release. Needs GITHUB_TOKEN with write access. Takes org/repo, default borkdude/test-repo."
+          :extra-paths ["script"]
+          :requires ([smoke])
+          :task (apply smoke/-main *command-line-args*)}}}

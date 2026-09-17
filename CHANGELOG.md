@@ -2,12 +2,12 @@
 
 [gh-release-artifact](https://github.com/borkdude/gh-release-artifact): Upload artifacts to Github releases idempotently
 
-## Unreleased
+## v0.2.2
 
 - Throw when Github does not accept an upload, instead of printing the status
   and returning. A failed upload no longer leaves a green build.
-- Keep an asset of the name on the release throughout a replacement: the new
-  one once the upload is through, the existing one otherwise. A failed upload
+- Upload the new bytes before touching the existing asset when replacing one,
+  and put the existing asset back when a later step fails. A failed upload
   used to leave the release without the asset, because the old one was
   deleted first.
 - Retry a server error and a rate limit, three attempts by default, honouring

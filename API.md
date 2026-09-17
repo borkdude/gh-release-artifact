@@ -16,7 +16,7 @@
 
 A map of file extensions to mime-types.
 
-## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L13-L43)
+## <a name="borkdude.gh-release-artifact/release-artifact">`release-artifact`</a> [:page_facing_up:](https://github.com/borkdude/gh-release-artifact/blob/main/src/borkdude/gh_release_artifact.clj#L13-L48)
 <a name="borkdude.gh-release-artifact/release-artifact"></a>
 ``` clojure
 
@@ -45,8 +45,13 @@ Uploads artifact to github release. Creates (draft) release if there
   * `:retries` - Attempts per request, retrying a server error and a rate
     limit. Defaults to `3`.
   * `:retry-pause-ms` - Pause before the second attempt, growing with each
-    one. A `Retry-After` header takes its place. Defaults to `1000`.
+    one. A `Retry-After` header takes its place, up to a minute. Defaults to
+    `1000`.
 
-  Throws when Github does not accept the upload. Replacing an asset keeps
-  an asset of that name on the release throughout: the new one once the
-  upload is through, the existing one otherwise.
+  Throws when Github does not accept the upload. Replacing an asset uploads
+  the new bytes before it touches the existing asset, and puts the existing
+  one back when a later step fails, so the release holds the new bytes once
+  the upload is through and the existing ones otherwise. Github refuses two
+  assets of one name, so the exchange has a moment in which neither holds
+  it. A failure there throws with `:rolled-back false` and `:parked-as`, the
+  name the existing asset is left under.

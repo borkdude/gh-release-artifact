@@ -11,9 +11,9 @@
   used to leave the release without the asset, because the old one was
   deleted first.
 - Retry a server error and a rate limit, three attempts by default, honouring
-  `Retry-After`. `:retries` and `:retry-pause-ms` set this. An attempt that
-  Github answered with an error can still have created the asset, so the next
-  attempt clears it first, and so does giving up.
+  `Retry-After` up to a minute. `:retries` and `:retry-pause-ms` set this. An
+  attempt that Github answered with an error can still have created the
+  asset, so the next attempt clears it first, and so does giving up.
 
 ## v0.2.1
 

@@ -183,11 +183,23 @@
    "xwd"      "image/x-xwindowdump"
    "zip"      "application/zip"})
 
+;; Github asks for at most a minute on a secondary rate limit. A header that
+;; asks for longer is a reason to stop, not to hold the build there.
+(def ^:private max-retry-pause-ms 60000)
+
+(defn- header
+  "The value of header nm, whatever case the server sent it in."
+  [response nm]
+  (some (fn [[k v]] (when (.equalsIgnoreCase (str (name k)) nm) v))
+        (:headers response)))
+
 (defn- retry-after-ms
-  "The pause a rate limit asks for, in milliseconds, or nil."
+  "The pause a rate limit asks for, in milliseconds, at most a minute. nil
+  when the answer carries no Retry-After, or one that is not a number of
+  seconds."
   [response]
-  (when-let [header (get-in response [:headers "retry-after"])]
-    (try (* 1000 (Long/parseLong (str/trim header)))
+  (when-let [v (header response "retry-after")]
+    (try (min max-retry-pause-ms (* 1000 (Long/parseLong (str/trim v))))
          (catch Exception _ nil))))
 
 (defn- retriable?
@@ -275,8 +287,10 @@
   (try (delete-asset asset opts) (catch Exception _ nil)))
 
 (defn- rename-asset
-  "Gives asset the name asset-name and returns it."
-  [asset asset-name opts]
+  "Gives asset the name asset-name and returns it. reported is the name an
+  error message calls the asset by, which is the one the caller knows it as
+  rather than the temporary one it carries."
+  [asset asset-name reported opts]
   (let [response (with-retry
                    #(http/patch (:url asset)
                                 (with-gh-headers
@@ -285,34 +299,48 @@
                                                                     :label asset-name})}))
                    opts)]
     (when-not (= 200 (:status response))
-      (fail "Renaming to" asset-name response))
+      (fail "Renaming" reported response))
     (-> response :body (cheshire/parse-string true))))
 
 (defn- replace-asset
   "Uploads file as asset-name and returns the asset. When existing is an
   asset of that name, the new bytes go up under a temporary name, the
-  existing asset moves aside under another, and the new asset then takes
-  the name. Every step that fails puts the existing asset back, so the
-  release keeps an asset of that name throughout: the new one once the
-  whole exchange is through, the existing one otherwise."
+  existing asset moves aside under another, and the new asset takes the
+  name. A step that fails puts the existing asset back under its name, so
+  the bytes on the release are the new ones once the exchange is through
+  and the existing ones otherwise.
+
+  Github refuses two assets of one name, so the two renames leave a moment
+  in which neither holds it. A failure there is reported with
+  :rolled-back false and the name the existing asset is parked under."
   [upload-url file asset-name content-type existing opts]
   (if-not existing
     (post-asset upload-url file asset-name content-type opts)
     (let [suffix (java.util.UUID/randomUUID)
+          parked (str asset-name ".replaced-" suffix)
           tmp (post-asset upload-url file (str asset-name ".upload-" suffix)
                           content-type opts)]
-      (try (rename-asset existing (str asset-name ".replaced-" suffix) opts)
+      (try (rename-asset existing parked asset-name opts)
            (catch Exception e
              (discard tmp opts)
              (throw e)))
-      (let [renamed (try (rename-asset tmp asset-name opts)
+      (let [renamed (try (rename-asset tmp asset-name asset-name opts)
                          (catch Exception e
                            ;; the name is free again, so the existing asset
                            ;; goes back under it
-                           (try (rename-asset existing asset-name opts)
-                                (catch Exception _ nil))
-                           (discard tmp opts)
-                           (throw e)))]
+                           (let [back (try (rename-asset existing asset-name asset-name opts)
+                                           true
+                                           (catch Exception _ false))]
+                             (discard tmp opts)
+                             (if back
+                               (throw e)
+                               (throw (ex-info (str (ex-message e)
+                                                    ". The release has no " asset-name
+                                                    " now: its bytes are under " parked)
+                                               (assoc (ex-data e)
+                                                      :rolled-back false
+                                                      :parked-as parked)
+                                               e))))))]
         ;; the new asset holds the name; a leftover copy of the old one is
         ;; not worth failing the release over
         (discard existing opts)

@@ -35,6 +35,8 @@
   an error anyway."
   [{:keys [assets post-status patch-status post-creates? opts]
     :or {assets [] post-status created patch-status renamed post-creates? created?}}]
+  ;; post-status may answer with a status or with a whole response map, so a
+  ;; test can send headers along
   (let [log (atom [])
         posts (atom 0)
         patches (atom 0)
@@ -49,13 +51,14 @@
        #'ghr/list-assets (fn [_] (mapv (fn [[url nm]] {:name nm :url url}) @state))
        #'http/post (fn [_url {:keys [query-params]}]
                      (let [nm (get query-params "name")
-                           status (post-status nm @posts)]
+                           answer (post-status nm @posts)
+                           answer (if (map? answer) answer {:status answer})
+                           status (:status answer)]
                        (swap! posts inc)
                        (record :post nm)
                        (when (post-creates? status)
                          (swap! state assoc (:url (asset nm)) nm))
-                       {:status status
-                        :body (cheshire/generate-string (asset nm))}))
+                       (assoc answer :body (cheshire/generate-string (asset nm)))))
        #'http/delete (fn [url _]
                        (record :delete (get @state url (fs/file-name url)))
                        (swap! state dissoc url)
@@ -105,13 +108,23 @@
                                         ;; go through, the rename between
                                         ;; them does not
                                         :patch-status (fn [_ n] (if (= 1 n) 422 200))})]
-      (is (= "Renaming to artifact.zip failed with status 422" (ex-message error)))
+      (is (= "Renaming artifact.zip failed with status 422" (ex-message error)))
       (is (= ["artifact.zip"] assets))))
   (testing "a rename of the existing asset that fails takes the upload away"
     (let [{:keys [assets error]} (call {:assets [(asset "artifact.zip")]
                                         :patch-status (constantly 422)})]
-      (is (re-find #"artifact.zip.replaced" (ex-message error)))
-      (is (= ["artifact.zip"] assets)))))
+      (testing "and names the asset the caller knows, not the one it moves to"
+        (is (= "Renaming artifact.zip failed with status 422" (ex-message error))))
+      (is (= ["artifact.zip"] assets))))
+  (testing "a roll back that fails says where the bytes are"
+    (let [{:keys [assets error]} (call {:assets [(asset "artifact.zip")]
+                                        ;; the move aside goes through and
+                                        ;; every rename after it fails
+                                        :patch-status (fn [_ n] (if (zero? n) 200 422))})]
+      (is (re-find #"The release has no artifact.zip now: its bytes are under artifact.zip.replaced-"
+                   (ex-message error)))
+      (is (false? (:rolled-back (ex-data error))))
+      (is (= ["artifact.zip.replaced"] assets)))))
 
 (deftest retry-what-github-says-to-retry
   (testing "a 5xx is retried, and the asset an earlier attempt left is cleared first"
@@ -135,6 +148,32 @@
   (testing "the status and the asset name are in the message"
     (is (= "Uploading artifact.zip failed with status 422"
            (ex-message (:error (call {:post-status (constantly 422)})))))))
+
+(deftest read-the-retry-after-header
+  (let [ms #'ghr/retry-after-ms]
+    (testing "the header is read whatever case the server sent it in"
+      (is (= 5000 (ms {:headers {"retry-after" "5"}})))
+      (is (= 5000 (ms {:headers {"Retry-After" "5"}})))
+      (is (= 5000 (ms {:headers {:Retry-After " 5 "}}))))
+    (testing "a pause longer than a minute is cut down to one"
+      (is (= 60000 (ms {:headers {"retry-after" "3600"}}))))
+    (testing "nothing to wait for"
+      (is (nil? (ms {:headers {}})))
+      (is (nil? (ms {})))
+      ;; Github may send a date instead, which this does not read
+      (is (nil? (ms {:headers {"retry-after" "Wed, 21 Oct 2026 07:28:00 GMT"}}))))))
+
+(deftest a-rate-limit-is-retried
+  (testing "a 403 that asks to come back is retried"
+    (is (= [[:post "artifact.zip"] [:delete "artifact.zip"] [:post "artifact.zip"]]
+           (:log (call {:post-status (fn [_ n] (if (zero? n)
+                                                 {:status 403 :headers {"Retry-After" "0"}}
+                                                 201))
+                        :post-creates? (constantly true)})))))
+  (testing "a 403 that does not ask is a permission error, so it stands"
+    (let [{:keys [log error]} (call {:post-status (constantly 403)})]
+      (is (= [[:post "artifact.zip"]] log))
+      (is (= "Uploading artifact.zip failed with status 403" (ex-message error))))))
 
 (deftest options-take-an-explicit-nil
   (testing "a nil where a number would go falls back to the default"

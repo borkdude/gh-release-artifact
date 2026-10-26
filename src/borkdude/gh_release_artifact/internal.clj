@@ -302,6 +302,18 @@
       (fail "Renaming" reported response))
     (-> response :body (cheshire/parse-string true))))
 
+(defn- asset-named [asset-name assets]
+  (some #(when (= asset-name (:name %)) %) assets))
+
+(defn- taken-by-other-writer
+  "Returns the asset that holds asset-name if e is the 422 Github answers a
+  rename into a taken name with. Another writer that replaces the same asset
+  at the same time put it there."
+  [e asset-name opts]
+  (when (= 422 (:status (ex-data e)))
+    (try (asset-named asset-name (list-assets opts))
+         (catch Exception _ nil))))
+
 (defn- replace-asset
   "Uploads file as asset-name and returns the asset. When existing is an
   asset of that name, the new bytes go up under a temporary name, the
@@ -326,6 +338,9 @@
              (throw e)))
       (let [renamed (try (rename-asset tmp asset-name asset-name opts)
                          (catch Exception e
+                           (if-let [holder (taken-by-other-writer e asset-name opts)]
+                             (do (discard tmp opts)
+                                 holder)
                            ;; the name is free again, so the existing asset
                            ;; goes back under it
                            (let [back (try (rename-asset existing asset-name asset-name opts)
@@ -340,11 +355,54 @@
                                                (assoc (ex-data e)
                                                       :rolled-back false
                                                       :parked-as parked)
-                                               e))))))]
+                                               e)))))))]
         ;; the new asset holds the name; a leftover copy of the old one is
         ;; not worth failing the release over
         (discard existing opts)
         renamed))))
+
+(defn- asset-digest
+  "Returns the sha256 Github computed for asset, or nil if it has none."
+  [asset]
+  (some-> (:digest asset) (str/replace #"^sha256:" "")))
+
+(defn- asset-text [asset]
+  (-> (with-retry
+        #(http/get (:url asset)
+                   {:throw false
+                    :headers {"Authorization" (str "token " (token))
+                              "Accept" "application/octet-stream"}})
+        {})
+      :body
+      str
+      str/trim))
+
+(def ^:private checksum-attempts 5)
+
+(defn- write-checksum
+  "Uploads file-name.sha256 with the checksum of the file-name asset on the
+  release. Reads both back and writes the checksum again until they match,
+  because a concurrent writer can replace the asset in between. Throws if
+  they do not match after a few attempts."
+  [upload-url file file-name opts]
+  (let [sha256-name (str file-name ".sha256")
+        sha256-file (fs/file (fs/create-temp-dir) sha256-name)]
+    (loop [attempt 1]
+      (let [assets (list-assets opts)
+            expected (or (asset-digest (asset-named file-name assets))
+                         (digest/sha-256 (fs/file file)))]
+        (spit sha256-file expected)
+        (replace-asset upload-url sha256-file sha256-name "text/plain"
+                       (asset-named sha256-name assets) opts)
+        (let [assets (list-assets opts)
+              actual (asset-digest (asset-named file-name assets))
+              sha256-asset (asset-named sha256-name assets)]
+          (when (and actual
+                     (not= actual (some-> sha256-asset asset-text)))
+            (if (< attempt checksum-attempts)
+              (recur (inc attempt))
+              (throw (ex-info (str sha256-name " does not match " file-name)
+                              {:asset file-name :digest actual})))))))))
 
 (defn overwrite-asset [{:keys [:file :content-type] :as opts}]
   (let [release (release-for opts)
@@ -362,13 +420,7 @@
         (when sha256
           ;; after the file itself, so that a checksum never outlives the
           ;; bytes it describes
-          (let [sha256-fname (str file-name ".sha256")
-                tmp-dir (fs/create-temp-dir)
-                sha256-file (fs/file tmp-dir sha256-fname)
-                existing-sha-remote (some #(when (= sha256-fname (:name %)) %) assets)]
-            (spit sha256-file (digest/sha-256 (fs/file file)))
-            (replace-asset upload-url sha256-file sha256-fname "text/plain"
-                           existing-sha-remote opts)))
+          (write-checksum upload-url file file-name opts))
         body))))
 
 (comment

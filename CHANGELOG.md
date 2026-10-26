@@ -14,6 +14,10 @@
   `Retry-After` up to a minute. `:retries` and `:retry-pause-ms` set this. An
   attempt that Github answered with an error can still have created the
   asset, so the next attempt clears it first, and so does giving up.
+- Keep the asset of a concurrent writer that takes the name during a
+  replacement, instead of failing.
+- Write the `.sha256` file from the checksum Github computed for the asset on
+  the release, and write it again until the two match.
 
 ## v0.2.1
 

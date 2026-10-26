@@ -4,6 +4,7 @@
    [babashka.http-client :as http]
    [borkdude.gh-release-artifact.internal :as ghr]
    [cheshire.core :as cheshire]
+   [clj-commons.digest :as digest]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]))
 
@@ -32,8 +33,13 @@
   and the number of earlier posts, and returns the status Github answers
   with. patch-status does the same for a rename. post-creates? says whether
   a post put the asset on the release, which Github can do and then answer
-  an error anyway."
-  [{:keys [assets post-status patch-status post-creates? opts]
+  an error anyway. on-patch takes the name a rename moves to, the number of
+  earlier renames and a function that puts an asset of a name and content on
+  the release, as another writer would.
+
+  Each asset carries content and the digest Github computes from it. The
+  content and digests of the assets end up under :contents."
+  [{:keys [assets post-status patch-status post-creates? on-patch opts]
     :or {assets [] post-status created patch-status renamed post-creates? created?}}]
   ;; post-status may answer with a status or with a whole response map, so a
   ;; test can send headers along
@@ -43,13 +49,23 @@
         ;; the release, by asset url, so a rename and a delete move the same
         ;; asset the real API would
         state (atom (into {} (map (juxt :url :name)) assets))
+        contents (atom (into {} (map (juxt :url #(str "old " (:name %)))) assets))
+        others (atom 0)
+        put! (fn [nm content]
+               (let [url (str "https://api.example/other/" (swap! others inc))]
+                 (swap! state #(assoc (into {} (remove (fn [[_ n]] (= nm n))) %) url nm))
+                 (swap! contents assoc url content)))
         file (doto (fs/file (fs/create-temp-dir) "artifact.zip") (spit "bytes"))
         record (fn [op nm] (swap! log conj [op (steady nm)]))
         error (atom nil)]
     (with-redefs-fn
       {#'ghr/release-for (fn [_] {:upload_url (str upload-url "{?name,label}")})
-       #'ghr/list-assets (fn [_] (mapv (fn [[url nm]] {:name nm :url url}) @state))
-       #'http/post (fn [_url {:keys [query-params]}]
+       #'ghr/list-assets (fn [_] (mapv (fn [[url nm]]
+                                         {:name nm :url url
+                                          :digest (str "sha256:" (digest/sha-256 (@contents url)))})
+                                       @state))
+       #'http/get (fn [url _] {:status 200 :body (@contents url)})
+       #'http/post (fn [_url {:keys [query-params body]}]
                      (let [nm (get query-params "name")
                            answer (post-status nm @posts)
                            answer (if (map? answer) answer {:status answer})
@@ -57,15 +73,19 @@
                        (swap! posts inc)
                        (record :post nm)
                        (when (post-creates? status)
-                         (swap! state assoc (:url (asset nm)) nm))
+                         (swap! state assoc (:url (asset nm)) nm)
+                         (swap! contents assoc (:url (asset nm)) (slurp body)))
                        (assoc answer :body (cheshire/generate-string (asset nm)))))
        #'http/delete (fn [url _]
                        (record :delete (get @state url (fs/file-name url)))
                        (swap! state dissoc url)
+                       (swap! contents dissoc url)
                        {:status 204})
        #'http/patch (fn [url {:keys [body]}]
                       (let [nm (:name (cheshire/parse-string body true))
-                            status (patch-status nm @patches)]
+                            _ (when on-patch (on-patch (steady nm) @patches put!))
+                            taken (some (fn [[u n]] (and (= nm n) (not= u url))) @state)
+                            status (if taken 422 (patch-status nm @patches))]
                         (swap! patches inc)
                         (record :patch (str (steady (get @state url (fs/file-name url)))
                                             " -> " (steady nm)))
@@ -80,6 +100,7 @@
             (catch Exception e (reset! error e))))
     {:log @log
      :assets (sort (map steady (vals @state)))
+     :contents (into {} (map (fn [[url nm]] [(steady nm) (@contents url)])) @state)
      :error @error}))
 
 (deftest upload-a-new-asset
@@ -208,3 +229,35 @@
 (deftest keep-an-asset-without-overwrite
   (testing "an existing asset is left as it is"
     (is (= [] (:log (call {:assets [(asset "artifact.zip")] :opts {:overwrite false}}))))))
+
+(deftest share-an-asset-with-a-concurrent-writer
+  (testing "a concurrent writer's asset and checksum stay on the release"
+    (let [{:keys [assets contents error]}
+          (call {:assets [(asset "artifact.zip") (asset "artifact.zip.sha256")]
+                 :on-patch (fn [nm n put!]
+                             (when (and (= "artifact.zip" nm) (= 1 n))
+                               (put! "artifact.zip" "theirs")))
+                 :opts {:sha256 true}})]
+      (is (nil? error))
+      (is (= ["artifact.zip" "artifact.zip.sha256"] assets))
+      (is (= "theirs" (contents "artifact.zip")))
+      (is (= (digest/sha-256 "theirs") (contents "artifact.zip.sha256")))))
+  (testing "a file change after the checksum rewrites the checksum"
+    (let [{:keys [contents error]}
+          (call {:assets [(asset "artifact.zip") (asset "artifact.zip.sha256")]
+                 :on-patch (fn [nm _ put!]
+                             (when (= "artifact.zip.sha256.replaced" nm)
+                               (put! "artifact.zip" "theirs")))
+                 :opts {:sha256 true}})]
+      (is (nil? error))
+      (is (= "theirs" (contents "artifact.zip")))
+      (is (= (digest/sha-256 "theirs") (contents "artifact.zip.sha256")))))
+  (testing "a file change on every attempt throws"
+    (let [writes (atom 0)
+          {:keys [error]}
+          (call {:assets [(asset "artifact.zip") (asset "artifact.zip.sha256")]
+                 :on-patch (fn [nm _ put!]
+                             (when (= "artifact.zip.sha256" nm)
+                               (put! "artifact.zip" (str "theirs " (swap! writes inc)))))
+                 :opts {:sha256 true}})]
+      (is (= "artifact.zip.sha256 does not match artifact.zip" (ex-message error))))))

@@ -72,5 +72,23 @@
     (upload "three")
     (check "the asset carries the newest bytes" 5 (get (assets opts) "smoke.txt"))
 
+    (println "two writers at once")
+    (let [files (for [content ["four" "fivefive"]]
+                  (doto (fs/file (fs/create-temp-dir) "smoke.txt") (spit content)))
+          runs (mapv (fn [f]
+                       (future (try (ghr/release-artifact (assoc opts :file (str f)))
+                                    nil
+                                    (catch Exception e (ex-message e)))))
+                     files)
+          errors (into [] (keep deref) runs)
+          now (assets opts)]
+      (check "neither writer fails" [] errors)
+      (check "no temporary asset is left behind"
+             [] (filterv #(or (str/includes? % ".upload-") (str/includes? % ".replaced-"))
+                         (keys now)))
+      (check "the checksum matches the asset on the release"
+             (digest/sha-256 (asset-body opts "smoke.txt"))
+             (str/trim (asset-body opts "smoke.txt.sha256"))))
+
     (println "\nall checks passed. The draft release is at"
              (str "https://github.com/" org "/" repo "/releases"))))

@@ -41,7 +41,13 @@
   the upload is through and the existing ones otherwise. Github refuses two
   assets of one name, so the exchange has a moment in which neither holds
   it. A failure there throws with `:rolled-back false` and `:parked-as`, the
-  name the existing asset is left under."
+  name the existing asset is left under.
+
+  An asset that another writer puts under the name in that moment is kept,
+  and the call returns it.
+  The `:sha256` file holds the checksum Github computed for the asset on the
+  release. It is read back and written again until the two match, and the
+  call throws if they do not match after five attempts."
   [{:keys [overwrite]
     :or {overwrite false}
     :as opts}]
